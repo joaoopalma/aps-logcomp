@@ -1,0 +1,18 @@
+programa MinhaAir {
+  receita Batata {
+    // Pré-aquecer a 200°C por 5 min
+    preaquecer temperatura 200 graus celsius;
+    aquecer tempo 5 minutos;
+
+    // Repetir 3 vezes: cozinhar 8 min e mexer (agitar na metade)
+    var i: inteiro = 0;
+    enquanto (i < 3) {
+      cozinhar temperatura 200 graus celsius tempo 8 minutos;
+      agitar aos 8 minutos;   // "mexer" no final do ciclo
+      i = i + 1;
+    }
+
+    imprimir("Batata finalizada!");
+    parar;
+  }
+}

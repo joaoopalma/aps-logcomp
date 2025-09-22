@@ -1,0 +1,17 @@
+programa TesteSolto {
+  // Exemplo sem 'receita': comandos diretos
+  modo legumes;  // preset de temp/tempo (definido no backend)
+  var t: inteiro = 10;
+  var croc: frac = 1.1;   // fator de "crocância"
+
+  se (croc > 1.0) {
+    // Ajuste simples: +10% no tempo
+    t = t * 1.1;
+  } senao {
+    t = t;
+  }
+
+  cozinhar temperatura 170 graus celsius tempo t minutos;
+  imprimir("Legumes prontos em", t, "minutos.");
+  parar;
+}

@@ -1,0 +1,32 @@
+# --- C/C++ build ---
+build/
+cmake-build-*/
+dist/
+bin/
+obj/
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.dSYM/
+*.stackdump
+
+# --- Flex/Bison (gerados) ---
+lex.yy.c
+*.yy.c
+y.tab.c
+y.tab.h
+*.tab.c
+*.tab.h
+*.output
+
+# --- IDEs/OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

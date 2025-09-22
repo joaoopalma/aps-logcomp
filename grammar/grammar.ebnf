@@ -1,0 +1,102 @@
+(* ---------- Programa e organização ---------- *)
+programa       = "programa" ID bloco_programa ;
+
+bloco_programa = "{" { top_level } "}" ;
+top_level      = receita | declaracao | comando ;
+
+receita        = "receita" ID bloco ;
+passo          = "passo" ID bloco ;
+
+bloco          = "{" { declaracao | comando } "}" ;
+
+(* ---------- Declarações ---------- *)
+declaracao     = "var" ID ":" tipo [ "=" expr ] ";" ;
+
+tipo           = "inteiro" | "frac" | "bool" | "texto" ;
+
+(* ---------- Comandos ---------- *)
+comando        = atribuicao ";"
+               | preaquecer ";"
+               | cozinhar ";"
+               | aquecer ";"
+               | agitar ";"
+               | set_modo ";"
+               | pausar ";"
+               | continuar ";"
+               | parar ";"
+               | imprimir ";"
+               | condicional
+               | repeticao
+               | passo
+               | bloco ;
+
+atribuicao     = ID "=" expr ;
+
+preaquecer     = "preaquecer" temperatura_espec ;
+cozinhar       = "cozinhar"   temperatura_espec "tempo" duracao ;
+aquecer        = "aquecer"     "tempo" duracao ;
+agitar         = "agitar"      "aos" numero "minutos" ;
+
+set_modo       = "modo" ( "batata" | "legumes" | "nuggets" | "esfihas" ) ;
+
+pausar         = "pausar" ;
+continuar      = "continuar" ;
+parar          = "parar" ;
+
+imprimir       = "imprimir" "(" expr { "," expr } ")" ;
+
+condicional    = "se" "(" expr ")" bloco [ "senao" bloco ] ;
+repeticao      = "enquanto" "(" expr ")" bloco ;
+
+temperatura_espec = "temperatura" numero "graus" "celsius" ;
+
+duracao        = numero ( "minutos" | "segundos" ) ;
+
+(* ---------- Expressões ---------- *)
+expr           = disj ;
+
+disj           = conj { "ou" conj } ;
+conj           = neg  { "e"  neg  } ;
+neg            = [ "nao" ] rel ;
+
+rel            = soma [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) soma ] ;
+
+soma           = produto { ( "+" | "-" ) produto } ;
+produto        = unario  { ( "*" | "/" ) unario  } ;
+
+unario         = [ "-" ] primario ;
+
+primario       = literal
+               | ID
+               | "(" expr ")"
+               ;
+
+literal        = numero
+               | STR
+               | "verdadeiro"
+               | "falso"
+               ;
+
+numero         = INT | DEC ;
+
+(* ---------- Léxico (informal) ---------- *)
+ID    = letter { letter | digit | "_" } ;
+INT   = digit { digit } ;
+DEC   = digit { digit } "." digit { digit } ;
+STR   = '"' { char | '\"' | '\n' | '\t' } '"' ;
+
+(* Espaços em branco fora de STR são ignorados.
+   Comentários de linha: // até fim da linha
+   Comentários de bloco: /* ... */ *)
+
+(* ---------- Palavras-reservadas ----------
+programa, receita, passo,
+var, inteiro, frac, bool, texto,
+preaquecer, cozinhar, aquecer, agitar,
+modo, batata, legumes, nuggets, esfihas,
+temperatura, graus, celsius, tempo, minutos, segundos,
+pausar, continuar, parar, imprimir,
+se, senao, enquanto,
+verdadeiro, falso,
+e, ou, nao
+----------------------------------------- *)
