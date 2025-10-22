@@ -1,6 +1,5 @@
 # AirFryerScript — Gramática Explicada
 
-Este documento comenta a EBNF da linguagem e dá exemplos mínimos de uso.  
 Arquivo da gramática: [`grammar/grammar.ebnf`](../grammar/grammar.ebnf)
 
 ---

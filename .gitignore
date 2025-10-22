@@ -30,3 +30,8 @@ y.tab.h
 *.swo
 .DS_Store
 Thumbs.db
+
+# --- Arquivos de demonstração (não versionar) ---
+DEMO_COMMANDS.md
+demo_*.afs
+teste_*.afs

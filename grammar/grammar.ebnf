@@ -35,7 +35,7 @@ atribuicao     = ID "=" expr ;
 preaquecer     = "preaquecer" temperatura_espec ;
 cozinhar       = "cozinhar"   temperatura_espec "tempo" duracao ;
 aquecer        = "aquecer"     "tempo" duracao ;
-agitar         = "agitar"      "aos" numero "minutos" ;
+agitar         = "agitar"      "aos" expr "minutos" ;
 
 set_modo       = "modo" ( "batata" | "legumes" | "nuggets" | "esfihas" ) ;
 
@@ -48,9 +48,9 @@ imprimir       = "imprimir" "(" expr { "," expr } ")" ;
 condicional    = "se" "(" expr ")" bloco [ "senao" bloco ] ;
 repeticao      = "enquanto" "(" expr ")" bloco ;
 
-temperatura_espec = "temperatura" numero "graus" "celsius" ;
+temperatura_espec = "temperatura" expr "graus" "celsius" ;
 
-duracao        = numero ( "minutos" | "segundos" ) ;
+duracao        = expr ( "minutos" | "segundos" ) ;
 
 (* ---------- Expressões ---------- *)
 expr           = disj ;

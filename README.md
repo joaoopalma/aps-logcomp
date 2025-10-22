@@ -37,8 +37,41 @@ Referência oficial: APS – Log Comp 2025/2. :contentReference[oaicite:2]{index
 - `imprimir("...");`
 
 ### Estruturas de controle
-- `se (expr) { ... } [ senao { ... } ]`
-- `enquanto (expr) { ... }`
+- `se (expr) { ... } [ senao { ... } ]` — Condicionais
+- `enquanto (expr) { ... }` — **Loops com capacidade computacional completa**
+
+#### Exemplos de Loops:
+```afs
+// Loop simples com contador
+var i: inteiro = 0;
+enquanto (i < 5) {
+    cozinhar temperatura 180 graus celsius tempo 3 minutos;
+    i = i + 1;
+}
+
+// Loop com múltiplas condições
+var temp: inteiro = 150;
+var tempo: inteiro = 0;
+enquanto (temp < 200 e tempo < 30) {
+    preaquecer temperatura temp graus celsius;
+    temp = temp + 10;
+    tempo = tempo + 5;
+}
+
+// Loops aninhados para receitas complexas
+var ciclo: inteiro = 1;
+enquanto (ciclo <= 3) {
+    var fase: inteiro = 1;
+    enquanto (fase <= 2) {
+        cozinhar temperatura 200 graus celsius tempo 8 minutos;
+        agitar aos 4 minutos;
+        fase = fase + 1;
+    }
+    ciclo = ciclo + 1;
+}
+```
+
+**Documentação completa de loops**: [`docs/loops_explicacao.md`](docs/loops_explicacao.md)
 
 ### Expressões
 - Aritmética: `+ - * /`  
