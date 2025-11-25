@@ -1,7 +1,16 @@
 %{
+/*
+ * airfryer.y
+ * Parser para AirFryerScript usando Bison
+ * Versao atualizada com AST estruturada, analise semantica e geracao de codigo
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ast.h"
+#include "semantic.h"
+#include "codegen.h"
 
 extern int yylex();
 extern int yyparse();
@@ -10,27 +19,38 @@ extern int line_num;
 
 void yyerror(const char *s);
 
-/* Estrutura para a árvore sintática (simplificada para esta fase) */
-typedef struct node {
-    char *type;
-    char *value;
-    struct node **children;
-    int num_children;
-} node_t;
-
-node_t* create_node(const char* type, const char* value);
-void add_child(node_t* parent, node_t* child);
-void print_tree(node_t* root, int depth);
-void free_tree(node_t* root);
-
-node_t* root = NULL;
+/* Raiz da AST */
+ASTNode* root = NULL;
 %}
+
+/* Listas temporarias para construcao de nos durante parsing */
+%code requires {
+    #include "ast.h"
+    
+    typedef struct {
+        ASTNode **items;
+        int count;
+        int capacity;
+    } NodeList;
+}
+
+%code {
+    NodeList* nodelist_create();
+    void nodelist_add(NodeList *list, ASTNode *node);
+    void nodelist_free(NodeList *list);
+}
 
 %union {
     int int_val;
     double double_val;
     char *str_val;
-    struct node *node_val;
+    ASTNode *node_val;
+    DataType type_val;
+    ModoKind modo_val;
+    TimeUnit time_unit_val;
+    BinOpKind binop_val;
+    UnOpKind unop_val;
+    NodeList *list_val;
 }
 
 /* Tokens terminais */
@@ -57,110 +77,120 @@ node_t* root = NULL;
 /* Delimitadores */
 %token LBRACE RBRACE LPAREN RPAREN SEMICOLON COLON COMMA
 
-/* Tipos não-terminais */
-%type <node_val> programa top_level receita passo bloco
-%type <node_val> declaracao tipo comando atribuicao
+/* Tipos nao-terminais */
+%type <node_val> programa receita passo bloco
+%type <node_val> declaracao comando atribuicao
 %type <node_val> preaquecer cozinhar aquecer agitar set_modo
 %type <node_val> pausar continuar parar imprimir
 %type <node_val> condicional repeticao
-%type <node_val> temperatura_espec duracao
+%type <node_val> temperatura_espec
 %type <node_val> expr disj conj neg rel soma produto unario primario
-%type <node_val> literal numero
-%type <node_val> top_level_list declaracao_comando_list expr_list
+%type <node_val> literal
+%type <list_val> top_level_list declaracao_comando_list expr_list
+%type <type_val> tipo
+%type <modo_val> modo_tipo
+%type <time_unit_val> unidade_tempo
 
-/* Precedência e associatividade */
+/* Precedencia e associatividade */
 %left OU
 %left E
 %right NAO
 %left EQ NE LT LE GT GE
 %left PLUS MINUS
 %left MULT DIV MOD
-%right UMINUS  /* operador unário menos */
+%right UMINUS
 
 %%
 
-/* ---------- Programa e organização ---------- */
+/* ===== PROGRAMA E ORGANIZACAO ===== */
+
 programa:
     PROGRAMA ID LBRACE top_level_list RBRACE {
-        $$ = create_node("programa", $2);
-        add_child($$, $4);
+        /* Criar no do programa com todos os itens */
+        $$ = ast_create_programa($2, $4->items, $4->count);
+        free($4);  /* Liberar a lista temporaria (mas nao os itens) */
+        free($2);
         root = $$;
-        printf("Análise sintática concluída com sucesso!\n");
     }
     ;
 
 top_level_list:
     /* vazio */ {
-        $$ = create_node("top_level_list", "");
+        $$ = nodelist_create();
     }
-    | top_level_list top_level {
+    | top_level_list receita {
         $$ = $1;
-        add_child($$, $2);
+        nodelist_add($$, $2);
     }
-    ;
-
-top_level:
-    receita { $$ = $1; }
-    | declaracao { $$ = $1; }
-    | comando { $$ = $1; }
+    | top_level_list declaracao {
+        $$ = $1;
+        nodelist_add($$, $2);
+    }
+    | top_level_list comando {
+        $$ = $1;
+        nodelist_add($$, $2);
+    }
     ;
 
 receita:
     RECEITA ID bloco {
-        $$ = create_node("receita", $2);
-        add_child($$, $3);
+        $$ = ast_create_receita($2, $3);
+        free($2);
     }
     ;
 
 passo:
     PASSO ID bloco {
-        $$ = create_node("passo", $2);
-        add_child($$, $3);
+        $$ = ast_create_passo($2, $3);
+        free($2);
     }
     ;
 
 bloco:
     LBRACE declaracao_comando_list RBRACE {
-        $$ = create_node("bloco", "");
-        add_child($$, $2);
+        $$ = ast_create_bloco($2->items, $2->count);
+        free($2);
     }
     ;
 
 declaracao_comando_list:
     /* vazio */ {
-        $$ = create_node("declaracao_comando_list", "");
+        $$ = nodelist_create();
     }
     | declaracao_comando_list declaracao {
         $$ = $1;
-        add_child($$, $2);
+        nodelist_add($$, $2);
     }
     | declaracao_comando_list comando {
         $$ = $1;
-        add_child($$, $2);
+        nodelist_add($$, $2);
     }
     ;
 
-/* ---------- Declarações ---------- */
+/* ===== DECLARACOES ===== */
+
 declaracao:
     VAR ID COLON tipo SEMICOLON {
-        $$ = create_node("declaracao", $2);
-        add_child($$, $4);
+        $$ = ast_create_declaracao($2, $4, NULL);
+        $$->line = line_num;
+        free($2);
     }
     | VAR ID COLON tipo ASSIGN expr SEMICOLON {
-        $$ = create_node("declaracao_com_init", $2);
-        add_child($$, $4);
-        add_child($$, $6);
+        $$ = ast_create_declaracao($2, $4, $6);
+        $$->line = line_num;
+        free($2);
     }
     ;
 
 tipo:
-    INTEIRO { $$ = create_node("tipo", "inteiro"); }
-    | FRAC { $$ = create_node("tipo", "frac"); }
-    | BOOL { $$ = create_node("tipo", "bool"); }
-    | TEXTO { $$ = create_node("tipo", "texto"); }
+    INTEIRO { $$ = TYPE_INTEIRO; }
+    | FRAC { $$ = TYPE_FRAC; }
+    | BOOL { $$ = TYPE_BOOL; }
+    | TEXTO { $$ = TYPE_TEXTO; }
     ;
 
-/* ---------- Comandos ---------- */
+/* ===== COMANDOS ===== */
+
 comando:
     atribuicao SEMICOLON { $$ = $1; }
     | preaquecer SEMICOLON { $$ = $1; }
@@ -180,118 +210,125 @@ comando:
 
 atribuicao:
     ID ASSIGN expr {
-        $$ = create_node("atribuicao", $1);
-        add_child($$, $3);
+        $$ = ast_create_atribuicao($1, $3);
+        $$->line = line_num;
+        free($1);
     }
     ;
 
 preaquecer:
     PREAQUECER temperatura_espec {
-        $$ = create_node("preaquecer", "");
-        add_child($$, $2);
+        $$ = ast_create_preaquecer($2);
+        $$->line = line_num;
     }
     ;
 
 cozinhar:
-    COZINHAR temperatura_espec TEMPO duracao {
-        $$ = create_node("cozinhar", "");
-        add_child($$, $2);
-        add_child($$, $4);
+    COZINHAR temperatura_espec TEMPO expr unidade_tempo {
+        $$ = ast_create_cozinhar($2, $4, $5);
+        $$->line = line_num;
     }
     ;
 
 aquecer:
-    AQUECER TEMPO duracao {
-        $$ = create_node("aquecer", "");
-        add_child($$, $3);
+    AQUECER TEMPO expr unidade_tempo {
+        $$ = ast_create_aquecer($3, $4);
+        $$->line = line_num;
     }
     ;
 
 agitar:
     AGITAR AOS expr MINUTOS {
-        $$ = create_node("agitar", "");
-        add_child($$, $3);
+        $$ = ast_create_agitar($3);
+        $$->line = line_num;
     }
     ;
 
 set_modo:
-    MODO BATATA { $$ = create_node("modo", "batata"); }
-    | MODO LEGUMES { $$ = create_node("modo", "legumes"); }
-    | MODO NUGGETS { $$ = create_node("modo", "nuggets"); }
-    | MODO ESFIHAS { $$ = create_node("modo", "esfihas"); }
+    MODO modo_tipo {
+        $$ = ast_create_set_modo($2);
+        $$->line = line_num;
+    }
+    ;
+
+modo_tipo:
+    BATATA { $$ = MODE_BATATA; }
+    | LEGUMES { $$ = MODE_LEGUMES; }
+    | NUGGETS { $$ = MODE_NUGGETS; }
+    | ESFIHAS { $$ = MODE_ESFIHAS; }
+    ;
+
+unidade_tempo:
+    MINUTOS { $$ = TIME_MINUTOS; }
+    | SEGUNDOS { $$ = TIME_SEGUNDOS; }
     ;
 
 pausar:
-    PAUSAR { $$ = create_node("pausar", ""); }
+    PAUSAR {
+        $$ = ast_create_pausar();
+        $$->line = line_num;
+    }
     ;
 
 continuar:
-    CONTINUAR { $$ = create_node("continuar", ""); }
+    CONTINUAR {
+        $$ = ast_create_continuar();
+        $$->line = line_num;
+    }
     ;
 
 parar:
-    PARAR { $$ = create_node("parar", ""); }
+    PARAR {
+        $$ = ast_create_parar();
+        $$->line = line_num;
+    }
     ;
 
 imprimir:
     IMPRIMIR LPAREN expr_list RPAREN {
-        $$ = create_node("imprimir", "");
-        add_child($$, $3);
+        $$ = ast_create_imprimir($3->items, $3->count);
+        $$->line = line_num;
+        free($3);
     }
     ;
 
 expr_list:
     expr {
-        $$ = create_node("expr_list", "");
-        add_child($$, $1);
+        $$ = nodelist_create();
+        nodelist_add($$, $1);
     }
     | expr_list COMMA expr {
         $$ = $1;
-        add_child($$, $3);
+        nodelist_add($$, $3);
     }
     ;
 
 condicional:
     SE LPAREN expr RPAREN bloco {
-        $$ = create_node("se", "");
-        add_child($$, $3);
-        add_child($$, $5);
+        $$ = ast_create_se($3, $5, NULL);
+        $$->line = line_num;
     }
     | SE LPAREN expr RPAREN bloco SENAO bloco {
-        $$ = create_node("se_senao", "");
-        add_child($$, $3);
-        add_child($$, $5);
-        add_child($$, $7);
+        $$ = ast_create_se($3, $5, $7);
+        $$->line = line_num;
     }
     ;
 
 repeticao:
     ENQUANTO LPAREN expr RPAREN bloco {
-        $$ = create_node("enquanto", "");
-        add_child($$, $3);
-        add_child($$, $5);
+        $$ = ast_create_enquanto($3, $5);
+        $$->line = line_num;
     }
     ;
 
 temperatura_espec:
     TEMPERATURA expr GRAUS CELSIUS {
-        $$ = create_node("temperatura", "");
-        add_child($$, $2);
+        $$ = $2;
     }
     ;
 
-duracao:
-    expr MINUTOS {
-        $$ = create_node("duracao_minutos", "");
-        add_child($$, $1);
-    }
-    | expr SEGUNDOS {
-        $$ = create_node("duracao_segundos", "");
-        add_child($$, $1);
-    }
-    ;
+/* ===== EXPRESSOES ===== */
 
-/* ---------- Expressões ---------- */
 expr:
     disj { $$ = $1; }
     ;
@@ -299,108 +336,97 @@ expr:
 disj:
     conj { $$ = $1; }
     | disj OU conj {
-        $$ = create_node("ou", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_OR, $1, $3);
+        $$->line = line_num;
     }
     ;
 
 conj:
     neg { $$ = $1; }
     | conj E neg {
-        $$ = create_node("e", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_AND, $1, $3);
+        $$->line = line_num;
     }
     ;
 
 neg:
     rel { $$ = $1; }
     | NAO neg {
-        $$ = create_node("nao", "");
-        add_child($$, $2);
+        $$ = ast_create_unop(OP_NOT, $2);
+        $$->line = line_num;
     }
     ;
 
 rel:
     soma { $$ = $1; }
     | soma EQ soma {
-        $$ = create_node("==", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_EQ, $1, $3);
+        $$->line = line_num;
     }
     | soma NE soma {
-        $$ = create_node("!=", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_NE, $1, $3);
+        $$->line = line_num;
     }
     | soma LT soma {
-        $$ = create_node("<", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_LT, $1, $3);
+        $$->line = line_num;
     }
     | soma LE soma {
-        $$ = create_node("<=", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_LE, $1, $3);
+        $$->line = line_num;
     }
     | soma GT soma {
-        $$ = create_node(">", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_GT, $1, $3);
+        $$->line = line_num;
     }
     | soma GE soma {
-        $$ = create_node(">=", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_GE, $1, $3);
+        $$->line = line_num;
     }
     ;
 
 soma:
     produto { $$ = $1; }
     | soma PLUS produto {
-        $$ = create_node("+", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_ADD, $1, $3);
+        $$->line = line_num;
     }
     | soma MINUS produto {
-        $$ = create_node("-", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_SUB, $1, $3);
+        $$->line = line_num;
     }
     ;
 
 produto:
     unario { $$ = $1; }
     | produto MULT unario {
-        $$ = create_node("*", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_MUL, $1, $3);
+        $$->line = line_num;
     }
     | produto DIV unario {
-        $$ = create_node("/", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_DIV, $1, $3);
+        $$->line = line_num;
     }
     | produto MOD unario {
-        $$ = create_node("%", "");
-        add_child($$, $1);
-        add_child($$, $3);
+        $$ = ast_create_binop(OP_MOD, $1, $3);
+        $$->line = line_num;
     }
     ;
 
 unario:
     primario { $$ = $1; }
     | MINUS unario %prec UMINUS {
-        $$ = create_node("unario_minus", "");
-        add_child($$, $2);
+        $$ = ast_create_unop(OP_NEG, $2);
+        $$->line = line_num;
     }
     ;
 
 primario:
     literal { $$ = $1; }
     | ID {
-        $$ = create_node("id", $1);
+        $$ = ast_create_variavel($1);
+        $$->line = line_num;
+        free($1);
     }
     | LPAREN expr RPAREN {
         $$ = $2;
@@ -408,111 +434,153 @@ primario:
     ;
 
 literal:
-    numero { $$ = $1; }
-    | STR_LITERAL {
-        $$ = create_node("string", $1);
-    }
-    | VERDADEIRO {
-        $$ = create_node("bool", "verdadeiro");
-    }
-    | FALSO {
-        $$ = create_node("bool", "falso");
-    }
-    ;
-
-numero:
     INT_LITERAL {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%d", $1);
-        $$ = create_node("int", strdup(buffer));
+        $$ = ast_create_literal_int($1);
+        $$->line = line_num;
     }
     | DEC_LITERAL {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%.2f", $1);
-        $$ = create_node("frac", strdup(buffer));
+        $$ = ast_create_literal_frac($1);
+        $$->line = line_num;
+    }
+    | STR_LITERAL {
+        $$ = ast_create_literal_str($1);
+        $$->line = line_num;
+        free($1);
+    }
+    | VERDADEIRO {
+        $$ = ast_create_literal_bool(1);
+        $$->line = line_num;
+    }
+    | FALSO {
+        $$ = ast_create_literal_bool(0);
+        $$->line = line_num;
     }
     ;
 
 %%
 
-/* ---------- Funções auxiliares ---------- */
+/* ===== FUNCOES AUXILIARES ===== */
 
 void yyerror(const char *s) {
-    printf("Erro sintático na linha %d: %s\n", line_num, s);
+    fprintf(stderr, "Erro sintatico na linha %d: %s\n", line_num, s);
 }
 
-node_t* create_node(const char* type, const char* value) {
-    node_t* node = malloc(sizeof(node_t));
-    node->type = strdup(type);
-    node->value = value ? strdup(value) : strdup("");
-    node->children = NULL;
-    node->num_children = 0;
-    return node;
+/* Criar uma nova lista de nos */
+NodeList* nodelist_create() {
+    NodeList *list = (NodeList*)malloc(sizeof(NodeList));
+    list->capacity = 8;
+    list->count = 0;
+    list->items = (ASTNode**)malloc(list->capacity * sizeof(ASTNode*));
+    return list;
 }
 
-void add_child(node_t* parent, node_t* child) {
-    parent->children = realloc(parent->children, 
-                              (parent->num_children + 1) * sizeof(node_t*));
-    parent->children[parent->num_children] = child;
-    parent->num_children++;
+/* Adicionar um no a lista */
+void nodelist_add(NodeList *list, ASTNode *node) {
+    if (list->count >= list->capacity) {
+        list->capacity *= 2;
+        list->items = (ASTNode**)realloc(list->items, list->capacity * sizeof(ASTNode*));
+    }
+    list->items[list->count++] = node;
 }
 
-void print_tree(node_t* root, int depth) {
-    if (!root) return;
-    
-    for (int i = 0; i < depth; i++) {
-        printf("  ");
-    }
-    
-    printf("<%s>", root->type);
-    if (strlen(root->value) > 0) {
-        printf(": %s", root->value);
-    }
-    printf("\n");
-    
-    for (int i = 0; i < root->num_children; i++) {
-        print_tree(root->children[i], depth + 1);
-    }
+/* Liberar a lista (mas nao os nos) */
+void nodelist_free(NodeList *list) {
+    free(list->items);
+    free(list);
 }
 
-void free_tree(node_t* root) {
-    if (!root) return;
-    
-    for (int i = 0; i < root->num_children; i++) {
-        free_tree(root->children[i]);
-    }
-    
-    free(root->type);
-    free(root->value);
-    free(root->children);
-    free(root);
-}
+/* ===== MAIN ===== */
 
 int main(int argc, char **argv) {
-    if (argc > 1) {
-        FILE *file = fopen(argv[1], "r");
-        if (!file) {
-            printf("Erro: não foi possível abrir o arquivo %s\n", argv[1]);
-            return 1;
-        }
-        yyin = file;
-    }
-    
-    printf("Iniciando análise de %s...\n", argc > 1 ? argv[1] : "entrada padrão");
-    
-    if (yyparse() == 0) {
-        printf("\n=== Árvore Sintática ===\n");
-        print_tree(root, 0);
-        free_tree(root);
-        printf("\nParsing bem-sucedido!\n");
-    } else {
-        printf("Parsing falhou.\n");
+    /* Verificar argumentos */
+    if (argc < 2) {
+        fprintf(stderr, "Uso: %s <arquivo.afs> [-o <saida.mwasm>] [-debug]\n", argv[0]);
         return 1;
     }
     
-    if (argc > 1) {
-        fclose(yyin);
+    /* Abrir arquivo de entrada */
+    FILE *file = fopen(argv[1], "r");
+    if (!file) {
+        fprintf(stderr, "Erro: nao foi possivel abrir o arquivo %s\n", argv[1]);
+        return 1;
     }
+    yyin = file;
+    
+    /* Verificar opcoes */
+    int debug_mode = 0;
+    FILE *output = stdout;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-debug") == 0) {
+            debug_mode = 1;
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output = fopen(argv[i + 1], "w");
+            if (!output) {
+                fprintf(stderr, "Erro: nao foi possivel criar arquivo de saida %s\n", argv[i + 1]);
+                output = stdout;
+            }
+            i++;
+        }
+    }
+    
+    /* Parser */
+    fprintf(stderr, "Iniciando analise de %s...\n", argv[1]);
+    
+    if (yyparse() != 0) {
+        fprintf(stderr, "Erro: falha na analise sintatica.\n");
+        fclose(file);
+        if (output != stdout) fclose(output);
+        return 1;
+    }
+    
+    fprintf(stderr, "Analise sintatica concluida com sucesso.\n");
+    
+    /* Debug: imprimir AST */
+    if (debug_mode) {
+        fprintf(stderr, "\n=== Arvore Sintatica Abstrata ===\n");
+        ast_print(root, 0);
+        fprintf(stderr, "\n");
+    }
+    
+    /* Analise semantica */
+    fprintf(stderr, "Realizando analise semantica...\n");
+    SemanticErrorList *errors = error_list_create();
+    
+    if (!semantic_analyze(root, errors)) {
+        fprintf(stderr, "\n");
+        error_list_print(errors);
+        fprintf(stderr, "\nErro: falha na analise semantica.\n");
+        error_list_free(errors);
+        ast_free(root);
+        fclose(file);
+        if (output != stdout) fclose(output);
+        return 1;
+    }
+    
+    fprintf(stderr, "Analise semantica concluida com sucesso.\n");
+    error_list_free(errors);
+    
+    /* Geracao de codigo */
+    fprintf(stderr, "Gerando codigo assembly...\n");
+    CodeGenerator *codegen = codegen_create(output);
+    
+    if (!codegen_generate(codegen, root)) {
+        fprintf(stderr, "Erro: falha na geracao de codigo.\n");
+        codegen_free(codegen);
+        ast_free(root);
+        fclose(file);
+        if (output != stdout) fclose(output);
+        return 1;
+    }
+    
+    fprintf(stderr, "Codigo gerado com sucesso.\n");
+    
+    /* Limpeza */
+    codegen_free(codegen);
+    ast_free(root);
+    fclose(file);
+    if (output != stdout) fclose(output);
+    
+    fprintf(stderr, "Compilacao concluida!\n");
     
     return 0;
 }

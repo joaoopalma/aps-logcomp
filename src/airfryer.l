@@ -1,8 +1,9 @@
 %{
-#include "airfryer.tab.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "ast.h"
+#include "airfryer.tab.h"
 
 extern int yyparse();
 extern void yyerror(const char *s);
